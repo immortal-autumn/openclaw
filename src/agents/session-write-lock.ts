@@ -987,7 +987,22 @@ export async function acquireSessionWriteLock(params: {
           );
         },
       });
-      return { release: lock.release };
+      const innerRelease = lock.release;
+      const release = async () => {
+        await innerRelease();
+        // Fallback cleanup: if sidecar-lock's removeLockIfUnchanged failed
+        // due to snapshot mismatch, force-remove the lock file if we still
+        // own it (pid matches current process).
+        try {
+          const payload = await readLockPayload(lockPath);
+          if (payload?.pid === process.pid) {
+            await fs.rm(lockPath, { force: true });
+          }
+        } catch {
+          // Best-effort fallback on filesystem errors.
+        }
+      };
+      return { release };
     } catch (err) {
       if (!isFileLockError(err, "file_lock_timeout") && !isFileLockError(err, "file_lock_stale")) {
         throw err;
