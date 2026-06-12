@@ -991,12 +991,14 @@ export async function acquireSessionWriteLock(params: {
       const release = async () => {
         await innerRelease();
         // Fallback cleanup: if sidecar-lock's removeLockIfUnchanged failed
-        // due to snapshot mismatch, force-remove the lock file if we still
-        // own it (pid matches current process).
+        // due to snapshot mismatch, force-remove the lock file if no
+        // reentrant holder remains and the file still matches our pid.
         try {
-          const payload = await readLockPayload(lockPath);
-          if (payload?.pid === process.pid) {
-            await fs.rm(lockPath, { force: true });
+          if (!sessionLockHeldByThisProcess(normalizedSessionFile)) {
+            const payload = await readLockPayload(lockPath);
+            if (payload?.pid === process.pid) {
+              await fs.rm(lockPath, { force: true });
+            }
           }
         } catch {
           // Best-effort fallback on filesystem errors.
